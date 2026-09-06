@@ -26,15 +26,13 @@ Run `parqeye` by providing the path to the `.parquet` file.
 parqeye <path-to-parquet-file>
 ```
 
-# Installation
-
-## Python
-
-You can run `parqeye` using `uvx`:
+You can also run `parqeye` using `uvx`:
 
 ```
 uvx parqeye <path-to-parquet-file>
 ```
+
+# Installation
 
 ## Cargo
 

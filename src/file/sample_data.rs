@@ -17,7 +17,7 @@ impl ParquetSampleData {
         const MAX_ROWS: usize = 200;
 
         // Read parquet file using polars LazyFrame
-        let df = LazyFrame::scan_parquet(PlPath::new(file_path), Default::default())?
+        let df = LazyFrame::scan_parquet(PlRefPath::new(file_path), Default::default())?
             .limit(MAX_ROWS as u32)
             .collect()?;
 
@@ -37,7 +37,7 @@ impl ParquetSampleData {
         let mut rows = Vec::new();
         for row_idx in 0..df.height() {
             let mut row = Vec::new();
-            for col in df.get_columns() {
+            for col in df.columns() {
                 let series = col.as_materialized_series();
                 let value = Self::get_value_as_string(series, row_idx);
                 row.push(value);

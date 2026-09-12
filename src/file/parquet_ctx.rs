@@ -16,6 +16,8 @@ pub struct ParquetCtx {
     pub row_groups: RowGroups,
     pub schema: FileSchema,
     pub sample_data: ParquetSampleData,
+    /// optional of the sample data errors out.
+    pub sample_data_error: Option<String>,
     /// Retained so page info can be read lazily (reuses the already-parsed footer).
     reader: SerializedFileReader<File>,
     /// Caches page info per (row group, column) so it is read/decompressed at most once.
@@ -55,11 +57,11 @@ impl ParquetCtx {
             details: format!("Failed to parse schema: {e}"),
         })?;
 
-        let sample_data = ParquetSampleData::read_sample_data(file_path).map_err(|e| {
-            FileIOError::SampleDataError {
-                details: e.to_string(),
-            }
-        })?;
+        let (sample_data, sample_data_error) = match ParquetSampleData::read_sample_data(file_path)
+        {
+            Ok(data) => (data, None),
+            Err(e) => (ParquetSampleData::default(), Some(e.to_string())),
+        };
 
         Ok(ParquetCtx {
             file_path: file_path.to_string(),
@@ -67,6 +69,7 @@ impl ParquetCtx {
             row_groups,
             schema,
             sample_data,
+            sample_data_error,
             reader,
             page_cache: RefCell::new(HashMap::new()),
         })
@@ -157,6 +160,26 @@ mod tests {
         let path = test_data_path("nulls.snappy.parquet");
         let result = ParquetCtx::from_file(&path);
         assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_geospatial_file_opens_with_a_sample_data_error() {
+        // polars cannot read the GEOMETRY logical type, but that must not stop
+        // the file opening: metadata, schema and row groups are all still valid.
+        let path = test_data_path("geospatial/crs-srid.parquet");
+        let ctx = ParquetCtx::from_file(&path).expect("geospatial file should still open");
+
+        assert!(ctx.sample_data_error.is_some());
+        assert_eq!(ctx.schema.column_size(), 2);
+        assert!(ctx.sample_data.rows.is_empty());
+    }
+
+    #[test]
+    fn test_sample_data_error_is_none_for_a_readable_file() {
+        let ctx = ParquetCtx::from_file(&test_data_path("alltypes_plain.parquet")).unwrap();
+
+        assert!(ctx.sample_data_error.is_none());
+        assert_eq!(ctx.sample_data.total_rows, 8);
     }
 
     #[test]

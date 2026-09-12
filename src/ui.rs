@@ -4,7 +4,8 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     prelude::Color,
     style::{Style, Stylize},
-    widgets::{Block, BorderType, Borders, Widget},
+    text::Line,
+    widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap},
 };
 
 use crate::app::AppRenderView;
@@ -252,12 +253,37 @@ impl<'a> AppWidget<'a> {
     }
 
     fn render_visualize_view(&self, area: Rect, buf: &mut Buffer) {
+        // if polars fails to read the file, return error
+        if let Some(error) = &self.0.parquet_ctx.sample_data_error {
+            return render_sample_data_error(error, area, buf);
+        }
+
         DataTable::new(&self.0.parquet_ctx.sample_data)
             .with_horizontal_scroll(self.0.state().horizontal_offset())
             .with_vertical_scroll(self.0.state().data_vertical_scroll())
             .with_selected_row(Some(self.0.state().vertical_offset()))
             .render(area, buf)
     }
+}
+
+/// show error screen and error when failing
+fn render_sample_data_error(error: &str, area: Rect, buf: &mut Buffer) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(" Preview unavailable ".yellow().bold());
+
+    Paragraph::new(vec![
+        Line::from("This file's data could not be read by polars.".yellow()),
+        Line::from(""),
+        Line::from(error.to_string()),
+        Line::from(""),
+        Line::from("The Metadata, Schema and Row Groups tabs still work.".dim()),
+    ])
+    .block(block)
+    .wrap(Wrap { trim: true })
+    .render(area, buf);
 }
 
 impl<'a> Widget for AppWidget<'a> {
@@ -281,5 +307,22 @@ impl<'a> Widget for AppWidget<'a> {
             "Visualize" => self.render_visualize_view(inner_area, buf),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_data_error_is_rendered_instead_of_the_table() {
+        let area = Rect::new(0, 0, 60, 10);
+        let mut buf = Buffer::empty(area);
+
+        render_sample_data_error("LogicalType union has no variant set", area, &mut buf);
+
+        let text: String = buf.content().iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Preview unavailable"), "got: {text}");
+        assert!(text.contains("LogicalType union has no variant set"));
     }
 }

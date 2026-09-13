@@ -93,31 +93,40 @@ impl<'a> RowGroupColumnMetadataComponent<'a> {
             "N/A".to_string()
         };
 
+        let file_offset = match self.column_metadata.file_offset {
+            Some(offset) => Cell::from(commas(offset)).fg(Color::White),
+            None => Cell::from("N/A").fg(Color::DarkGray),
+        };
+
         let kv_pairs = vec![
-            ("File Offset (B)", commas(self.column_metadata.file_offset)),
+            ("File Offset (B)", file_offset),
             (
                 "Compressed Size",
-                human_readable_bytes(self.column_metadata.total_compressed_size as u64),
+                Cell::from(human_readable_bytes(
+                    self.column_metadata.total_compressed_size as u64,
+                ))
+                .fg(Color::White),
             ),
             (
                 "Uncompressed Size",
-                human_readable_bytes(self.column_metadata.total_uncompressed_size as u64),
+                Cell::from(human_readable_bytes(
+                    self.column_metadata.total_uncompressed_size as u64,
+                ))
+                .fg(Color::White),
             ),
-            ("Compression Ratio", compression_ratio),
+            (
+                "Compression Ratio",
+                Cell::from(compression_ratio).fg(Color::White),
+            ),
             (
                 "Compression Type",
-                self.column_metadata.compression_type.clone(),
+                Cell::from(self.column_metadata.compression_type.clone()).fg(Color::White),
             ),
         ];
 
         let rows: Vec<Row> = kv_pairs
             .into_iter()
-            .map(|(k, v)| {
-                Row::new(vec![
-                    Cell::from(k).bold().fg(Color::Cyan),
-                    Cell::from(v).fg(Color::White),
-                ])
-            })
+            .map(|(k, v)| Row::new(vec![Cell::from(k).bold().fg(Color::Cyan), v]))
             .collect();
 
         let table = Table::new(rows, vec![Constraint::Length(18), Constraint::Fill(1)]).block(
@@ -202,26 +211,27 @@ impl<'a> RowGroupColumnMetadataComponent<'a> {
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "N/A".to_string());
 
-            let distinct_count_str = stats
-                .distinct_count
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "N/A".to_string());
+            let distinct_count = match stats.distinct_count {
+                Some(count) => Cell::from(count.to_string()).fg(Color::White),
+                None => Cell::from("N/A").fg(Color::DarkGray),
+            };
 
             let stat_pairs = vec![
-                ("Min", stats.min.as_deref().unwrap_or("N/A").to_string()),
-                ("Max", stats.max.as_deref().unwrap_or("N/A").to_string()),
-                ("Null Count", null_count_str),
-                ("Distinct Count", distinct_count_str),
+                (
+                    "Min",
+                    Cell::from(stats.min.as_deref().unwrap_or("N/A").to_string()).fg(Color::White),
+                ),
+                (
+                    "Max",
+                    Cell::from(stats.max.as_deref().unwrap_or("N/A").to_string()).fg(Color::White),
+                ),
+                ("Null Count", Cell::from(null_count_str).fg(Color::White)),
+                ("Distinct Count", distinct_count),
             ];
 
             let rows: Vec<Row> = stat_pairs
                 .into_iter()
-                .map(|(k, v)| {
-                    Row::new(vec![
-                        Cell::from(k).bold().fg(Color::Magenta),
-                        Cell::from(v).fg(Color::White),
-                    ])
-                })
+                .map(|(k, v)| Row::new(vec![Cell::from(k).bold().fg(Color::Magenta), v]))
                 .collect();
 
             let table = Table::new(rows, vec![Constraint::Length(18), Constraint::Fill(1)]).block(

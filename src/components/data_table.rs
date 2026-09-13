@@ -11,6 +11,7 @@ use ratatui::{
 use std::cmp::min;
 
 use crate::file::Renderable;
+use crate::file::utils::commas;
 
 const NUM_SPACES_BETWEEN_COLUMNS: u16 = 2;
 const NUM_SPACES_AFTER_LINE_NUMBER: u16 = 2;
@@ -62,7 +63,7 @@ impl<'a> DataTable<'a> {
     pub fn new(data: &'a ParquetSampleData) -> Self {
         Self {
             data,
-            title: "Data Preview (up to 100 rows)".to_string(),
+            title: format!("Data Preview ({} rows)", commas(data.total_rows as u64)),
             title_color: Color::Cyan,
             border_style: border::ROUNDED,
             horizontal_scroll: 0,
@@ -130,14 +131,18 @@ impl<'a> DataTable<'a> {
     /// Rendered width of every column (from the rows in view). Basis for both the
     /// scroll bound and how many columns are drawn, so they stay in agreement.
     fn all_column_widths(&self) -> Vec<u16> {
-        let start = self.vertical_scroll.min(self.data.rows.len());
-        self.calculate_column_widths(&self.data.flattened_columns, &self.data.rows[start..])
+        let win = self.data.loaded();
+        let start = self
+            .vertical_scroll
+            .saturating_sub(win.start)
+            .min(win.rows.len());
+        self.calculate_column_widths(&self.data.flattened_columns, &win.rows[start..])
     }
 
     /// Maximum horizontal scroll offset for a render area `area_width` wide,
     /// sized from actual column widths so the last column is always reachable.
     pub fn max_horizontal_scroll(&self, area_width: u16) -> usize {
-        let max_row_num = self.data.rows.len().saturating_sub(self.vertical_scroll);
+        let max_row_num = self.data.total_rows.saturating_sub(self.vertical_scroll);
         let row_num_section_width =
             (format!("{max_row_num}").len().max(4) as u16) + 2 * NUM_SPACES_AFTER_LINE_NUMBER + 1;
         let available_width = area_width.saturating_sub(row_num_section_width);
@@ -318,8 +323,10 @@ impl<'a> Widget for DataTable<'a> {
             return;
         }
 
+        let win = self.data.loaded();
+
         // Calculate row number section width
-        let max_row_num = self.data.rows.len().saturating_sub(self.vertical_scroll);
+        let max_row_num = self.data.total_rows.saturating_sub(self.vertical_scroll);
         let max_row_num_length = format!("{}", max_row_num).len().max(4) as u16;
         let row_num_section_width = max_row_num_length + 2 * NUM_SPACES_AFTER_LINE_NUMBER + 1;
         let x_row_separator = max_row_num_length + NUM_SPACES_AFTER_LINE_NUMBER + 1;
@@ -346,12 +353,13 @@ impl<'a> Widget for DataTable<'a> {
             .cloned()
             .collect();
 
-        // Get visible data for each row (apply vertical scroll)
-        let visible_rows: Vec<Vec<String>> = self
-            .data
+        // Get visible data for each row (apply vertical scroll). Rows live in a
+        // bounded window; index into it relative to the window start.
+        let row_skip = self.vertical_scroll.saturating_sub(win.start);
+        let visible_rows: Vec<Vec<String>> = win
             .rows
             .iter()
-            .skip(self.vertical_scroll)
+            .skip(row_skip)
             .map(|row| {
                 row.iter()
                     .skip(horizontal_scroll)

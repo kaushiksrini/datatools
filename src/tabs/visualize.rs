@@ -68,6 +68,11 @@ impl Tab for VisualizeTab {
             KeyCode::Char('d') | KeyCode::Char('D') => {
                 state.page_down(visible_rows, max_rows);
             }
+            // Jump to first / last row (vim-style g/G, or Home/End)
+            KeyCode::Char('g') | KeyCode::Home => state.jump_to_top(),
+            KeyCode::Char('G') | KeyCode::End => {
+                state.jump_to_bottom(visible_rows, max_rows);
+            }
             // Column navigation (Left/Right arrows)
             KeyCode::Left if state.horizontal_offset() > 0 => state.left(),
             // Upper bound is enforced in AppState against the on-screen column
@@ -97,6 +102,12 @@ impl Tab for VisualizeTab {
             "d".blue(),
             " : ".into(),
             "Page".into(),
+            " | ".white(),
+            "g".green(),
+            "/".white(),
+            "G".blue(),
+            " : ".into(),
+            "Top/Bottom".into(),
         ]
     }
 

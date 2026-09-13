@@ -155,6 +155,18 @@ impl AppState {
         self.adjust_scroll_to_selection(visible_rows, max_rows);
     }
 
+    /// Jump the selection (and viewport) to the first row.
+    pub fn jump_to_top(&mut self) {
+        self.vertical_offset = 0;
+        self.data_vertical_scroll = 0;
+    }
+
+    /// Jump the selection (and viewport) to the last row.
+    pub fn jump_to_bottom(&mut self, visible_rows: usize, max_rows: usize) {
+        self.vertical_offset = max_rows.saturating_sub(1);
+        self.adjust_scroll_to_selection(visible_rows, max_rows);
+    }
+
     pub fn adjust_scroll_to_selection(&mut self, visible_rows: usize, max_rows: usize) {
         // Ensure selected row is visible in viewport
         if self.vertical_offset < self.data_vertical_scroll {
@@ -198,6 +210,14 @@ impl<'a> App<'a> {
             // Account for: header (3 lines), footer (1 line), table header (3 lines) = 7 lines total
             let visible_data_rows = (terminal_size.height.saturating_sub(7) as usize).max(1);
             self.state.set_visible_data_rows(visible_data_rows);
+
+            // Lazily (re)load the row window backing the Visualize table so only a
+            // bounded slice of a large file is ever held in memory.
+            if self.tabs.active_tab().to_string() == "Visualize" {
+                self.parquet_ctx
+                    .sample_data
+                    .ensure_loaded(self.state.data_vertical_scroll(), visible_data_rows);
+            }
 
             // Bound horizontal column scrolling on the Visualize tab to what
             // actually fits, so it can't overshoot the last visible column (which
@@ -282,6 +302,19 @@ mod tests {
         state.left();
         state.left();
         assert_eq!(state.horizontal_offset(), 0);
+    }
+
+    #[test]
+    fn test_jump_to_bottom_then_top() {
+        let mut state = AppState::new();
+
+        state.jump_to_bottom(20, 7300);
+        assert_eq!(state.vertical_offset(), 7299);
+        assert_eq!(state.data_vertical_scroll(), 7300 - 20);
+
+        state.jump_to_top();
+        assert_eq!(state.vertical_offset(), 0);
+        assert_eq!(state.data_vertical_scroll(), 0);
     }
 
     #[test]

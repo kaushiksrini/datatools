@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{cmp::Ordering, collections::HashSet};
 
 use parquet::basic::{LogicalType, TimeUnit, Type as PhysicalType};
 use parquet::file::metadata::ParquetMetaData;
@@ -436,12 +436,16 @@ fn aggregate_column_stats(
                         Some(distinct.unwrap_or(0) + stats.distinct_count_opt().unwrap_or(0));
 
                     if let Some(min_b) = stats.min_bytes_opt()
-                        && min_bytes.as_ref().is_none_or(|mb| min_b < &mb[..])
+                        && min_bytes.as_ref().is_none_or(|mb| {
+                            compare_stat_values(min_b, mb, physical) == Ordering::Less
+                        })
                     {
                         min_bytes = Some(min_b.to_vec());
                     }
                     if let Some(max_b) = stats.max_bytes_opt()
-                        && max_bytes.as_ref().is_none_or(|mb| max_b > &mb[..])
+                        && max_bytes.as_ref().is_none_or(|mb| {
+                            compare_stat_values(max_b, mb, physical) == Ordering::Greater
+                        })
                     {
                         max_bytes = Some(max_b.to_vec());
                     }
@@ -466,6 +470,32 @@ fn aggregate_column_stats(
         distinct,
         total_compressed_size,
         total_uncompressed_size,
+    }
+}
+
+/*
+   Compare statistical values based on physical type;
+   avoid directly comparing the encoded bytes of integers and floating-point numbers.
+*/
+fn compare_stat_values(left: &[u8], right: &[u8], physical: PhysicalType) -> Ordering {
+    match physical {
+        PhysicalType::INT32 if left.len() == 4 && right.len() == 4 => {
+            i32::from_le_bytes(left.try_into().unwrap())
+                .cmp(&i32::from_le_bytes(right.try_into().unwrap()))
+        }
+        PhysicalType::INT64 if left.len() == 8 && right.len() == 8 => {
+            i64::from_le_bytes(left.try_into().unwrap())
+                .cmp(&i64::from_le_bytes(right.try_into().unwrap()))
+        }
+        PhysicalType::FLOAT if left.len() == 4 && right.len() == 4 => {
+            f32::from_le_bytes(left.try_into().unwrap())
+                .total_cmp(&f32::from_le_bytes(right.try_into().unwrap()))
+        }
+        PhysicalType::DOUBLE if left.len() == 8 && right.len() == 8 => {
+            f64::from_le_bytes(left.try_into().unwrap())
+                .total_cmp(&f64::from_le_bytes(right.try_into().unwrap()))
+        }
+        _ => left.cmp(right),
     }
 }
 
@@ -808,6 +838,38 @@ mod tests {
 
         let negative = decode_value(&[255, 255, 255, 255], PhysicalType::INT32);
         assert_eq!(negative, "-1");
+    }
+
+    #[test]
+    fn test_compare_stat_values_uses_numeric_order_for_int32() {
+        assert_eq!(
+            compare_stat_values(
+                &(-1i32).to_le_bytes(),
+                &1i32.to_le_bytes(),
+                PhysicalType::INT32
+            ),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_stat_values(
+                &256i32.to_le_bytes(),
+                &1i32.to_le_bytes(),
+                PhysicalType::INT32
+            ),
+            std::cmp::Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn test_compare_stat_values_uses_numeric_order_for_float() {
+        assert_eq!(
+            compare_stat_values(
+                &(-1.5f32).to_le_bytes(),
+                &1.5f32.to_le_bytes(),
+                PhysicalType::FLOAT
+            ),
+            std::cmp::Ordering::Less
+        );
     }
 
     #[test]

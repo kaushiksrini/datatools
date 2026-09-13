@@ -35,7 +35,8 @@ pub struct RowGroupColumnStats {
 }
 
 pub struct RowGroupColumnMetadata {
-    pub file_offset: u64,
+    /// `None` when the writer did not populate the (deprecated) `file_offset` field.
+    pub file_offset: Option<u64>,
     pub column_path: String,
     pub has_stats: HasStats,
     pub statistics: Option<RowGroupColumnStats>,
@@ -176,7 +177,10 @@ impl RowGroupColumnMetadata {
         let statistics = RowGroupColumnStats::new(column_chunk.statistics());
 
         Ok(RowGroupColumnMetadata {
-            file_offset: column_chunk.file_offset() as u64,
+            // file offset deprecated, show N/A if it is not valid
+            file_offset: u64::try_from(column_chunk.file_offset())
+                .ok()
+                .filter(|&offset| offset > 0),
             column_path: column_chunk.column_descr().path().to_string(),
             has_stats: HasStats {
                 has_stats: column_chunk.statistics().is_some(),
